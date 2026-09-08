@@ -4,6 +4,8 @@ import json
 import subprocess
 from datetime import datetime, timedelta
 from telebot import types
+from flask import Flask
+from threading import Thread
 
 # --- কনফিগারেশন ---
 API_TOKEN = '8991224456:AAGGs571JdZy07FiHfJvaLql8tTLDnnayng'
@@ -15,6 +17,16 @@ if not os.path.exists(HOST_DIR):
     os.makedirs(HOST_DIR)
 
 bot = telebot.TeleBot(API_TOKEN)
+
+# রেন্ডারের Web Service টিকিয়ে রাখার জন্য ফ্লাস্ক সার্ভার
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Tamim Hosting Bot is Alive!"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
 
 def load_db():
     if os.path.exists(DATA_FILE):
@@ -29,7 +41,6 @@ def welcome(message):
     uid = str(message.from_user.id)
     db = load_db()
     
-    # রেফারেল হ্যান্ডলিং (যদি কেউ রেফার লিংক দিয়ে জয়েন করে)
     args = message.text.split()
     if uid not in db:
         db[uid] = {"coins": 5, "active_bots": [], "last_bonus": "", "referred_by": None}
@@ -37,7 +48,7 @@ def welcome(message):
             ref_id = args[1]
             if ref_id in db and ref_id != uid:
                 db[uid]["referred_by"] = ref_id
-                db[ref_id]["coins"] += 3 # রেফার করলে রিফারের মালিক ৩ কয়েন পাবে
+                db[ref_id]["coins"] += 3 
                 try:
                     bot.send_message(ref_id, "🎉 অভিনন্দন! আপনার রেফারল লিংকের মাধ্যমে একজন নতুন ইউজার যুক্ত হয়েছে এবং আপনি ৩ কয়েন বোনাস পেয়েছেন।")
                 except:
@@ -55,9 +66,9 @@ def welcome(message):
     )
     
     welcome_text = (
-        f"🔥 **স্বাগতম {message.from_user.first_name} DarkNet Hosting প্যানেলে!** 🔥\n\n"
+        f"🔥 **স্বাগতম {message.from_user.first_name} Tamim Hosting প্যানেলে!** 🔥\n\n"
         "এখানে আপনি খুব সহজেই আপনার পাইথন টেলিগ্রাম বট ২৪/৭ ক্লাউডে ফ্রিতে হোস্ট করতে পারবেন। "
-        "নিচের অপশনগুলো থেকে আপনার প্রয়োজনীয় কাজ সিলেক্ট করুন:"
+        "নিচের অপشنগুলো থেকে আপনার প্রয়োজনীয় কাজ সিলেক্ট করুন:"
     )
     bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=markup)
 
@@ -150,7 +161,6 @@ def handle_callbacks(call):
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, help_text, parse_mode="Markdown")
 
-# ফাইল রিসিভ এবং হোস্টিং মেইন পার্ট
 @bot.message_handler(content_types=['document'])
 def handle_file(message):
     uid = str(message.from_user.id)
@@ -180,11 +190,9 @@ def handle_file(message):
         
         process_name = f"bot_{uid}_{message.document.file_name}"
         
-        # পুরনো একই নামের প্রসেস থাকলে রিমুভ করে নতুনটা রান করা
         subprocess.run(["pm2", "delete", process_name], stderr=subprocess.DEVNULL)
         subprocess.run(["pm2", "start", file_path, "--name", process_name, "--interpreter", "python3"])
         
-        # কয়েন কাটা ও সেভ করা
         db[uid]["coins"] -= 3
         if "active_bots" not in db[uid]: db[uid]["active_bots"] = []
         if process_name not in db[uid]["active_bots"]:
@@ -195,7 +203,6 @@ def handle_file(message):
     except Exception as e:
         bot.reply_to(message, f"❌ এরর দেখা দিয়েছে: {str(e)}")
 
-# এডমিন কমান্ড (কয়েন দেওয়ার জন্য)
 @bot.message_handler(commands=['add'])
 def add_coins(message):
     if message.from_user.id == ADMIN_ID:
@@ -213,4 +220,9 @@ def add_coins(message):
         except:
             bot.reply_to(message, "ভুল নিয়ম! ব্যবহার করুন: `/add ID Amount`", parse_mode="Markdown")
 
-bot.infinity_polling()
+if __name__ == '__main__':
+    # ফ্লাস্ক সার্ভার ব্যাকগ্রাউন্ডে রান করা
+    t = Thread(target=run_flask)
+    t.start()
+    # টেলিগ্রাম বট পোলিং শুরু করা
+    bot.infinity_polling()
